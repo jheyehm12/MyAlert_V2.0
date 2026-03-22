@@ -1,3 +1,4 @@
+//@version=5
 //@version=6
 indicator("MyAlert_V2.2", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=100)
 
@@ -1242,6 +1243,17 @@ string tickerIdUpper = str.upper(syminfo.tickerid)
 bool isForexInstrument = syminfo.type == "forex"
 bool isCryptoInstrument = syminfo.type == "crypto"
 bool isXAUInstrument = str.contains(tickerUpper, "XAU") or str.contains(tickerIdUpper, "XAU")
+
+float spreadPrice = f_getSpreadPrice()
+float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
+float adaptiveBufferPrice =
+     isXAUInstrument ? atrForTPSL * 0.1 :
+     isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) :
+     isCryptoInstrument ? atrForTPSL * 0.15 :
+     manualBufferPrice
+
+float tpSlBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+
 float spreadPrice = f_getSpreadPrice()
 float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
 float adaptiveBufferPrice = isXAUInstrument ? atrForTPSL * 0.1 : isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) : isCryptoInstrument ? atrForTPSL * 0.15 : manualBufferPrice
@@ -2210,4 +2222,5 @@ if nearestDemandIdx >= 0 and array.size(demandTopPrices) > nearestDemandIdx
         priceNearHotDemand := (close - topPrice) <= (atr * 0.2)
 
 alertcondition(priceNearHotSupply, title="Price Near Hot Supply", message="Price approaching hot supply zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
 alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
