@@ -1247,6 +1247,13 @@ bool isXAUInstrument = str.contains(tickerUpper, "XAU") or str.contains(tickerId
 float spreadPrice = f_getSpreadPrice()
 float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
 float adaptiveBufferPrice =
+     isXAUInstrument ? atrForTPSL * 0.10 :
+     isForexInstrument ? math.max(atrForTPSL * 0.10, spreadPrice * 1.5) :
+     isCryptoInstrument ? atrForTPSL * 0.15 :
+     manualBufferPrice
+
+float finalBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+
      isXAUInstrument ? atrForTPSL * 0.1 :
      isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) :
      isCryptoInstrument ? atrForTPSL * 0.15 :
@@ -1267,6 +1274,7 @@ float calcTP2 = na
 
 if enableTPSL and baseBullOK
     calcEntry := close
+    calcSL := f_roundToTick(low - finalBufferPrice)
     calcSL := f_roundToTick(low - adaptiveTpSlBufferPrice)
     calcSL := f_roundToTick(low - tpSlBufferPrice)
     float bullRisk = calcEntry - calcSL
@@ -1276,6 +1284,7 @@ if enableTPSL and baseBullOK
 
 if enableTPSL and baseBearOK
     calcEntry := close
+    calcSL := f_roundToTick(high + finalBufferPrice)
     calcSL := f_roundToTick(high + adaptiveTpSlBufferPrice)
     calcSL := f_roundToTick(high + tpSlBufferPrice)
     float bearRisk = calcSL - calcEntry
@@ -2222,5 +2231,6 @@ if nearestDemandIdx >= 0 and array.size(demandTopPrices) > nearestDemandIdx
         priceNearHotDemand := (close - topPrice) <= (atr * 0.2)
 
 alertcondition(priceNearHotSupply, title="Price Near Hot Supply", message="Price approaching hot supply zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
 alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
 alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
