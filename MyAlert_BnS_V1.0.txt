@@ -273,11 +273,21 @@ f_tfMultiplier() =>
     mult
 
 atrForArrow = ta.atr(14)
+atrForTPSL = ta.atr(14)
 arrowDistance = math.max(atrForArrow * 0.3 * arrowDistanceMultiplier, syminfo.mintick * 5.0)
 
 //-------------------------
 // Helpers
 //-------------------------
+f_roundToTick(price) =>
+    syminfo.mintick > 0 ? math.round(price / syminfo.mintick) * syminfo.mintick : price
+
+f_getSpreadPrice() =>
+    float liveSpread = not na(ask) and not na(bid) and ask >= bid ? (ask - bid) : syminfo.mintick
+    float contractValuePerTick = syminfo.mintick * syminfo.pointvalue
+    bool hasValidTickValue = contractValuePerTick > 0
+    hasValidTickValue ? math.max(liveSpread, syminfo.mintick) : syminfo.mintick
+
 f_consecutiveBearish(n) =>
     bool ok = true
     for i = 1 to n
@@ -1227,6 +1237,15 @@ bool baseBullOK = selectedBullSignal and qualityBullOK and spacingBullOK
 bool baseBearOK = selectedBearSignal and qualityBearOK and spacingBearOK
 
 // Calculate TP/SL for base signals using the signal candle itself
+string tickerUpper = str.upper(syminfo.ticker)
+string tickerIdUpper = str.upper(syminfo.tickerid)
+bool isForexInstrument = syminfo.type == "forex"
+bool isCryptoInstrument = syminfo.type == "crypto"
+bool isXAUInstrument = str.contains(tickerUpper, "XAU") or str.contains(tickerIdUpper, "XAU")
+float spreadPrice = f_getSpreadPrice()
+float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
+float adaptiveBufferPrice = isXAUInstrument ? atrForTPSL * 0.1 : isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) : isCryptoInstrument ? atrForTPSL * 0.15 : manualBufferPrice
+float tpSlBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
 float tpSlBufferPrice = tpSlBufferPips * syminfo.mintick
 float calcEntry = na
 float calcSL = na
@@ -1235,6 +1254,19 @@ float calcTP2 = na
 
 if enableTPSL and baseBullOK
     calcEntry := close
+    calcSL := f_roundToTick(low - tpSlBufferPrice)
+    float bullRisk = calcEntry - calcSL
+    if bullRisk > 0
+        calcTP1 := f_roundToTick(calcEntry + bullRisk)
+        calcTP2 := f_roundToTick(calcEntry + bullRisk * 2.0)
+
+if enableTPSL and baseBearOK
+    calcEntry := close
+    calcSL := f_roundToTick(high + tpSlBufferPrice)
+    float bearRisk = calcSL - calcEntry
+    if bearRisk > 0
+        calcTP1 := f_roundToTick(calcEntry - bearRisk)
+        calcTP2 := f_roundToTick(calcEntry - bearRisk * 2.0)
     calcSL := low - tpSlBufferPrice
     float bullRisk = calcEntry - calcSL
     if bullRisk > 0
