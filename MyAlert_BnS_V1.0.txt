@@ -1,4 +1,5 @@
 //@version=5
+//@version=6
 indicator("MyAlert_V2.2", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=100)
 
 // Signals (Main)
@@ -590,6 +591,23 @@ var array<float> tpSlEntryPrices = array.new<float>()
 var array<float> tpSlSLPrices = array.new<float>()
 var array<float> tpSlTP1Prices = array.new<float>()
 var array<float> tpSlTP2Prices = array.new<float>()
+var box activeRiskBox = na
+var box activeRewardBox = na
+var line activeEntryLine = na
+var line activeTP1Line = na
+var line activeTP2Line = na
+var label activeSLLabel = na
+var label activeTP1Label = na
+var label activeTP2Label = na
+var label activeTP1HitLabel = na
+var int activeTradeDirection = 0
+var int activeTradeStartBar = na
+var bool activeTradeRunning = false
+var bool activeTradeTP1Hit = false
+var float activeTradeEntry = na
+var float activeTradeSL = na
+var float activeTradeTP1 = na
+var float activeTradeTP2 = na
 
 
 //-------------------------
@@ -1250,6 +1268,27 @@ float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
 float adaptiveBufferPrice = isXAUInstrument ? atrForTPSL * 0.10 : isForexInstrument ? math.max(atrForTPSL * 0.10, spreadPrice * 1.5) : isCryptoInstrument ? atrForTPSL * 0.15 : manualBufferPrice
 float finalBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
 
+float adaptiveBufferPrice =
+     isXAUInstrument ? atrForTPSL * 0.10 :
+     isForexInstrument ? math.max(atrForTPSL * 0.10, spreadPrice * 1.5) :
+     isCryptoInstrument ? atrForTPSL * 0.15 :
+     manualBufferPrice
+
+float finalBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+
+     isXAUInstrument ? atrForTPSL * 0.1 :
+     isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) :
+     isCryptoInstrument ? atrForTPSL * 0.15 :
+     manualBufferPrice
+
+float tpSlBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+
+float spreadPrice = f_getSpreadPrice()
+float manualBufferPrice = math.max(tpSlBufferPips, 0.0) * syminfo.mintick
+float adaptiveBufferPrice = isXAUInstrument ? atrForTPSL * 0.1 : isForexInstrument ? math.max(atrForTPSL * 0.1, spreadPrice * 1.5) : isCryptoInstrument ? atrForTPSL * 0.15 : manualBufferPrice
+float adaptiveTpSlBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+float tpSlBufferPrice = f_roundToTick(math.max(adaptiveBufferPrice + manualBufferPrice, syminfo.mintick))
+float tpSlBufferPrice = tpSlBufferPips * syminfo.mintick
 float calcEntry = na
 float calcSL = na
 float calcTP1 = na
@@ -1260,6 +1299,9 @@ if enableTPSL and baseBullOK
     float bullCandleSL = f_roundToTick(low - finalBufferPrice)
     float bullAtrSL = f_roundToTick(close - atrForTPSL * cryptoAtrSlMult)
     calcSL := isCryptoInstrument ? f_roundToTick(math.min(bullCandleSL, bullAtrSL)) : bullCandleSL
+    calcSL := f_roundToTick(low - finalBufferPrice)
+    calcSL := f_roundToTick(low - adaptiveTpSlBufferPrice)
+    calcSL := f_roundToTick(low - tpSlBufferPrice)
     float bullRisk = calcEntry - calcSL
     if bullRisk > 0
         calcTP1 := f_roundToTick(calcEntry + bullRisk)
@@ -1270,10 +1312,26 @@ if enableTPSL and baseBearOK
     float bearCandleSL = f_roundToTick(high + finalBufferPrice)
     float bearAtrSL = f_roundToTick(close + atrForTPSL * cryptoAtrSlMult)
     calcSL := isCryptoInstrument ? f_roundToTick(math.max(bearCandleSL, bearAtrSL)) : bearCandleSL
+    calcSL := f_roundToTick(high + finalBufferPrice)
+    calcSL := f_roundToTick(high + adaptiveTpSlBufferPrice)
+    calcSL := f_roundToTick(high + tpSlBufferPrice)
     float bearRisk = calcSL - calcEntry
     if bearRisk > 0
         calcTP1 := f_roundToTick(calcEntry - bearRisk)
         calcTP2 := f_roundToTick(calcEntry - bearRisk * 2.0)
+    calcSL := low - tpSlBufferPrice
+    float bullRisk = calcEntry - calcSL
+    if bullRisk > 0
+        calcTP1 := calcEntry + bullRisk
+        calcTP2 := calcEntry + bullRisk * 2.0
+
+if enableTPSL and baseBearOK
+    calcEntry := close
+    calcSL := high + tpSlBufferPrice
+    float bearRisk = calcSL - calcEntry
+    if bearRisk > 0
+        calcTP1 := calcEntry - bearRisk
+        calcTP2 := calcEntry - bearRisk * 2.0
 
 // TP/SL variables
 float entryPrice = calcEntry
@@ -2149,6 +2207,112 @@ if array.size(tpSlDirections) > 0
 
             if tradeEnded
                 array.set(tpSlIsActive, setupIdx, false)
+bool newBullPosition = enableTPSL and canPlot and finalBullSignal and tpSlReady
+bool newBearPosition = enableTPSL and canPlot and finalBearSignal and tpSlReady
+
+if newBullPosition or newBearPosition
+    if not na(activeRiskBox)
+        box.delete(activeRiskBox)
+    if not na(activeRewardBox)
+        box.delete(activeRewardBox)
+    if not na(activeEntryLine)
+        line.delete(activeEntryLine)
+    if not na(activeTP1Line)
+        line.delete(activeTP1Line)
+    if not na(activeTP2Line)
+        line.delete(activeTP2Line)
+    if not na(activeSLLabel)
+        label.delete(activeSLLabel)
+    if not na(activeTP1Label)
+        label.delete(activeTP1Label)
+    if not na(activeTP2Label)
+        label.delete(activeTP2Label)
+    if not na(activeTP1HitLabel)
+        label.delete(activeTP1HitLabel)
+
+    activeTradeDirection := newBullPosition ? 1 : -1
+    activeTradeStartBar := bar_index
+    activeTradeRunning := true
+    activeTradeTP1Hit := false
+    activeTradeEntry := entryPrice
+    activeTradeSL := slPrice
+    activeTradeTP1 := tp1Price
+    activeTradeTP2 := tp2Price
+
+    float riskTop = math.max(activeTradeEntry, activeTradeSL)
+    float riskBottom = math.min(activeTradeEntry, activeTradeSL)
+    float rewardTop = math.max(activeTradeEntry, activeTradeTP2)
+    float rewardBottom = math.min(activeTradeEntry, activeTradeTP2)
+
+    activeRiskBox := box.new(left=bar_index, top=riskTop, right=bar_index, bottom=riskBottom, xloc=xloc.bar_index, border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 82))
+    activeRewardBox := box.new(left=bar_index, top=rewardTop, right=bar_index, bottom=rewardBottom, xloc=xloc.bar_index, border_color=color.new(color.lime, 0), bgcolor=color.new(color.lime, 82))
+    activeEntryLine := line.new(x1=bar_index, y1=activeTradeEntry, x2=bar_index, y2=activeTradeEntry, xloc=xloc.bar_index, color=color.new(color.white, 0), width=2)
+    activeTP1Line := showTP1 ? line.new(x1=bar_index, y1=activeTradeTP1, x2=bar_index, y2=activeTradeTP1, xloc=xloc.bar_index, color=color.new(color.green, 0), style=line.style_dashed, width=2) : na
+    activeTP2Line := showTP2 ? line.new(x1=bar_index, y1=activeTradeTP2, x2=bar_index, y2=activeTradeTP2, xloc=xloc.bar_index, color=color.new(color.green, 35), style=line.style_dotted, width=2) : na
+
+    if showTPSLLabels
+        activeSLLabel := label.new(x=bar_index, y=activeTradeSL, text="SL", xloc=xloc.bar_index, style=activeTradeDirection == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+        activeTP1Label := label.new(x=bar_index, y=activeTradeTP1, text="TP1", xloc=xloc.bar_index, style=activeTradeDirection == 1 ? label.style_label_up : label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
+        activeTP2Label := label.new(x=bar_index, y=activeTradeTP2, text="TP2", xloc=xloc.bar_index, style=activeTradeDirection == 1 ? label.style_label_up : label.style_label_down, color=color.new(color.green, 35), textcolor=color.white, size=size.tiny)
+    else
+        activeSLLabel := na
+        activeTP1Label := na
+        activeTP2Label := na
+
+    activeTP1HitLabel := na
+
+if activeTradeRunning
+    int maxTradeBar = activeTradeStartBar + tpSlMaxBars - 1
+    int tradeRightBar = math.min(bar_index, maxTradeBar)
+    bool slHit = false
+    bool tp1HitNow = false
+    bool tp2Hit = false
+    bool canCheckHits = bar_index > activeTradeStartBar
+
+    if canCheckHits
+        if activeTradeDirection == 1
+            slHit := low <= activeTradeSL
+            if not slHit
+                tp1HitNow := high >= activeTradeTP1
+                tp2Hit := high >= activeTradeTP2
+        else if activeTradeDirection == -1
+            slHit := high >= activeTradeSL
+            if not slHit
+                tp1HitNow := low <= activeTradeTP1
+                tp2Hit := low <= activeTradeTP2
+
+    if tp1HitNow and not activeTradeTP1Hit
+        activeTradeTP1Hit := true
+        if showTP1
+            if not na(activeTP1Line)
+                line.set_color(activeTP1Line, color.new(color.aqua, 0))
+        if not na(activeTP1HitLabel)
+            label.delete(activeTP1HitLabel)
+        activeTP1HitLabel := label.new(x=bar_index, y=activeTradeTP1, text="TP1 HIT", xloc=xloc.bar_index, style=activeTradeDirection == 1 ? label.style_label_up : label.style_label_down, color=color.new(color.aqua, 0), textcolor=color.black, size=size.tiny)
+
+    bool reachedMaxBars = bar_index >= maxTradeBar
+    bool tradeEnded = slHit or tp2Hit or reachedMaxBars
+    int finalRightBar = tradeEnded ? (slHit or tp2Hit ? bar_index : maxTradeBar) : tradeRightBar
+
+    if not na(activeRiskBox)
+        box.set_right(activeRiskBox, finalRightBar)
+    if not na(activeRewardBox)
+        box.set_right(activeRewardBox, finalRightBar)
+    if not na(activeEntryLine)
+        line.set_x2(activeEntryLine, finalRightBar)
+    if not na(activeTP1Line)
+        line.set_x2(activeTP1Line, finalRightBar)
+    if not na(activeTP2Line)
+        line.set_x2(activeTP2Line, finalRightBar)
+    if not na(activeSLLabel)
+        label.set_x(activeSLLabel, finalRightBar)
+    if not na(activeTP1Label)
+        label.set_x(activeTP1Label, finalRightBar)
+    if not na(activeTP2Label)
+        label.set_x(activeTP2Label, finalRightBar)
+
+    if tradeEnded
+        activeTradeRunning := false
 
 // INVALIDATION CHECKING LOGIC
 bool buySignalValidated = false
@@ -2253,4 +2417,8 @@ if nearestDemandIdx >= 0 and array.size(demandTopPrices) > nearestDemandIdx
         priceNearHotDemand := (close - topPrice) <= (atr * 0.2)
 
 alertcondition(priceNearHotSupply, title="Price Near Hot Supply", message="Price approaching hot supply zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
+alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
 alertcondition(priceNearHotDemand, title="Price Near Hot Demand", message="Price approaching hot demand zone on {{ticker}} ({{interval}})")
